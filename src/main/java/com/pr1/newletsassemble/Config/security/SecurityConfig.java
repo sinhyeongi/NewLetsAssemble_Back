@@ -1,4 +1,4 @@
-package com.pr1.newletsassemble.Config;
+package com.pr1.newletsassemble.config;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +13,7 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
+
     @Bean
     WebSecurityCustomizer webSecurityCustomizer(){
         return (web -> {

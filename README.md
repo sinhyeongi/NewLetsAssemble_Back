@@ -1,2 +1,9 @@
 # NewLetsAssemble_Back
-# NewLetsAssemble_Back
+## LetsAssemble 백엔드 및 프론트 분리
+기존 모놀리식 구조의 프로젝트를 프론트엔드 / 백엔드 분리 구조로 리펙토링하고,
+관리자(Admin) 기능 추가한 백엔드 서버입니다.
+## 정책
+### 2/29일 출생자
+#### - 윤년 : 2/29
+#### - 평년 : 3/1
+## API
