@@ -3,20 +3,21 @@ package com.pr1.newletsassemble.chat.infra.redis.repository;
 import com.pr1.newletsassemble.chat.infra.redis.keys.ChatRedisKeys;
 import com.pr1.newletsassemble.chat.infra.redis.keys.ChatRedisTtl;
 import com.pr1.newletsassemble.global.time.TimeProvider;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.connection.RedisStringCommands;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.stereotype.Repository;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.*;
 
 @Repository
 @Slf4j
@@ -40,6 +41,11 @@ public class ChatRedisRepository {
                 return t;
             });
     private final TimeProvider timeProvider;
+
+    @PreDestroy
+    public void shutdown(){
+        leaderComputePool.shutdownNow();
+    }
 
     public ChatRedisRepository(StringRedisTemplate redis,
                                @Qualifier("presenceTouchScript") DefaultRedisScript<Long> presenceTouchScript,
@@ -159,7 +165,7 @@ public class ChatRedisRepository {
 
     /* ------------- user read seq (ZSET Lua max update) ------------- */
     public long getUserLastReadSeq(long partyId, long userId){
-        Double score = redis.opsForZSet().score(ChatRedisKeys.userReadSeq(userId),partyId);
+        Double score = redis.opsForZSet().score(ChatRedisKeys.userReadSeq(userId),String.valueOf(partyId));
         return score == null ? 0L : score.longValue();
     }
     public Map<Long,Long> getUserLastReadSeqBatch(long userId,List<Long> partyIds){
@@ -330,6 +336,49 @@ public class ChatRedisRepository {
     }
     public void resetDirtyRetry(long userId){
         redis.delete(ChatRedisKeys.dirtyRetry(userId));
+    }
+    /* ------------- singleflight leader lock ------------- */
+    public boolean tryAcquireLeaderLock(long userId){
+        String key = ChatRedisKeys.unreadLeaderLock(userId);
+        return Boolean.TRUE.equals(
+                redis.execute((RedisCallback<Boolean>) con ->
+                    con.commands().set(
+                            key.getBytes(StandardCharsets.UTF_8),
+                            "1".getBytes(StandardCharsets.UTF_8),
+                            Expiration.milliseconds(ChatRedisTtl.LEADER_LOCK_TTL.toMillis()),
+                            RedisStringCommands.SetOption.SET_IF_ABSENT
+                    )
+                )
+        );
+    }
+    public Optional<Map<Long,Long>> computeWithTimeout(Callable<Map<Long,Long>> job){
+        Future<Map<Long,Long>> f = leaderComputePool.submit(job);
+        try{
+            return Optional.ofNullable(
+                    f.get(ChatRedisTtl.LEADER_COMPUTE_TIMEOUT.toMillis(),TimeUnit.MILLISECONDS)
+            );
+        }catch(TimeoutException te){
+            f.cancel(true);
+            return Optional.empty();
+        }catch(Exception e){
+            f.cancel(true);
+            return Optional.empty();
+        }
+
+    }
+    /* ------------- flush lock ------------- */
+    public boolean tryAcquireFlushLock(long userId){
+        String key = ChatRedisKeys.flushLock(userId);
+        return Boolean.TRUE.equals(
+                redis.execute((RedisCallback<Boolean>) con ->
+                con.commands().set(
+                        key.getBytes(StandardCharsets.UTF_8),
+                        "1".getBytes(StandardCharsets.UTF_8),
+                        Expiration.milliseconds(ChatRedisTtl.FLUSH_LOCK_TTL.toMillis()),
+                        RedisStringCommands.SetOption.SET_IF_ABSENT
+                )
+                               )
+        );
     }
     /* ------------- helper (SET) ------------- */
     private Set<Long> validSetAndParseLong(Set<String> s){
