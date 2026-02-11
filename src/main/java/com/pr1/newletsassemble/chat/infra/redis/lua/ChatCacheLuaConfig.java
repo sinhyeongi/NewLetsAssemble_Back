@@ -9,6 +9,12 @@ import java.util.List;
 @Configuration
 public class ChatCacheLuaConfig {
 
+    /*
+     *  삭제 예정
+     *  - dirtyPopDueUsersScript
+     *  -
+     */
+
     @Bean("presenceTouchScript")
     public DefaultRedisScript<Long> presenceTouchScript(){
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
@@ -113,6 +119,36 @@ public class ChatCacheLuaConfig {
                 end
                 return {}
         """);
+        return script;
+    }
+    @Bean("dirtyClaimDueUsersScript")
+    public DefaultRedisScript<List> dirtyClaimDueUsersScript(){
+        DefaultRedisScript<List> script = new DefaultRedisScript<>();
+        script.setResultType(List.class);
+        script.setScriptText("""
+                local key = KEYS[1]
+                local proc = KEYS[2]
+                local now = tonumber(ARGV[1])
+                local limit = tonumber(ARGV[2])
+                local lease = tonumber(ARGV[3])
+                if not key or not proc or not now or not limit or limit <= 0 or not lease then return {} end
+                local users = redis.call('ZRANGEBYSCORE',key,'-inf',now,'LIMIT',0,limit)
+                if not users or #users == 0 then return {} end
+                for _, u in ipairs(users) do
+                    redis.call('ZREM',key, u)
+                    redis.call('ZADD',proc, now + lease, u)
+                end
+                return users
+                """);
+        return script;
+    }
+    @Bean("dirtyRequeueExpiredProcessingScript")
+    public DefaultRedisScript<List> dirtyRequeueExpiredProcessingScript(){
+        DefaultRedisScript<List> script = new DefaultRedisScript<>();
+        script.setResultType(List.class);
+        script.setScriptText("""
+                
+                """);
         return script;
     }
     @Bean("dirtyFetchPartiesScript")

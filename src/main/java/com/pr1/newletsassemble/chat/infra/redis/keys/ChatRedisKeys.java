@@ -43,6 +43,9 @@ public final class ChatRedisKeys {
     public static String unreadStaleTmp(long userId,String nonce){
         return PRE_FIX + "unread:fresh:tmp:" + userId + ":" + nonce;
     }
+    public static String unreadNonce(long userId){
+        return PRE_FIX + "unread:nonce:" + userId;
+    }
     //leader lock
     public static String unreadLeaderLock(Long userId){
         return PRE_FIX + "lock:unread_leader:" + userId;
@@ -62,5 +65,9 @@ public final class ChatRedisKeys {
     // flush lock per user
     public static String flushLock(long userId){
         return PRE_FIX + "lock:flush:" + userId;
+    }
+
+    public static String dirtyProcessing(){
+        return PRE_FIX + "dirty:processing";
     }
 }

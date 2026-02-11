@@ -26,4 +26,7 @@ public final class ChatRedisTtl {
     public static final Duration FLUSH_INTERVAL = Duration.ofSeconds(30);
     public static final Duration FLUSH_LOCK_TTL = Duration.ofSeconds(3);
 
+    public static final Duration DIRTY_PARTIES_TTL = Duration.ofMinutes(10);
+    public static final Duration DIRTY_PROCESSING_LEASE = Duration.ofSeconds(10);
+
 }
