@@ -2,16 +2,13 @@ package com.pr1.newletsassemble.chat.application.scheduler;
 
 import com.pr1.newletsassemble.chat.infra.persistence.jdbc.ChatPartyMemberJdbcRepository;
 import com.pr1.newletsassemble.chat.infra.persistence.jdbc.dto.Row;
-import com.pr1.newletsassemble.chat.infra.redis.repository.ChatRedisRepository;
 import com.pr1.newletsassemble.global.time.TimeProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
@@ -26,7 +23,7 @@ public class ChatFlushScheduler {
         long now = time.now().toEpochMilli();
         redis.requeueExpiredProcessing(200);
 
-        List<String> users = redis.claimDueDirtyUsers(300);
+        List<String> users = redis.claimDueDirtyUsers(props.getScheduleLimit());
         if(users.isEmpty()) return;
 
         for(String u : users){

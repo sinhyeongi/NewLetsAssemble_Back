@@ -68,5 +68,4 @@ public final class ChatRedisKeys {
         return PRE_FIX + "lock:flush:" + userId;
     }
 
-
 }
