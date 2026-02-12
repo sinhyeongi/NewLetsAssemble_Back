@@ -24,14 +24,18 @@ import java.util.concurrent.*;
 public class ChatRedisRepository {
 
     private final StringRedisTemplate redis;
+
     private final DefaultRedisScript<Long> presenceTouchScript;
     private final DefaultRedisScript<Long> presenceCleanupScript;
     private final DefaultRedisScript<Long> zsetMaxUpdateScript;
 
     private final DefaultRedisScript<Long> dirtyMarkScript;
-    private final DefaultRedisScript<List> dirtyPopDueUsersScript;
+    private final DefaultRedisScript<List> dirtyClaimDueUsersScript;
+    private final DefaultRedisScript<List> dirtyRequeueExpiredProcessingScript;
     private final DefaultRedisScript<List> dirtyFetchPartiesScript;
-    private final DefaultRedisScript<Long> unreadSwapScript;
+    private final DefaultRedisScript<Long> dirtyAckScript;
+    private final DefaultRedisScript<Long> dirtyNackScript;
+    private final DefaultRedisScript<Long> unreadSwapWithNonceScript;
 
     private final ExecutorService leaderComputePool =
             Executors.newFixedThreadPool(4, r ->{
@@ -48,40 +52,42 @@ public class ChatRedisRepository {
     }
 
     public ChatRedisRepository(StringRedisTemplate redis,
-                               @Qualifier("presenceTouchScript") DefaultRedisScript<Long> presenceTouchScript,
-                               @Qualifier("presenceCleanupScript") DefaultRedisScript<Long> presenceCleanupScript,
-                               @Qualifier("zsetMaxUpdateScript") DefaultRedisScript<Long> zsetMaxUpdateScript,
-                               @Qualifier("dirtyMarkScript") DefaultRedisScript<Long> dirtyMarkScript,
-                               @Qualifier("dirtyPopDueUsersScript") DefaultRedisScript<List> dirtyPopDueUsersScript,
-                               @Qualifier("dirtyFetchPartiesScript") DefaultRedisScript<List> dirtyFetchPartiesScript,
-                               @Qualifier("unreadSwapScript") DefaultRedisScript<Long> unreadSwapScript,
+                               @Qualifier("presenceTouchScript")DefaultRedisScript<Long> presenceTouchScript,
+                               @Qualifier("presenceCleanupScript")DefaultRedisScript<Long> presenceCleanupScript,
+                               @Qualifier("zsetMaxUpdateScript")DefaultRedisScript<Long> zsetMaxUpdateScript,
+                               @Qualifier("dirtyMarkScript")DefaultRedisScript<Long> dirtyMarkScript,
+                               @Qualifier("dirtyClaimDueUsersScript")DefaultRedisScript<List> dirtyClaimDueUsersScript,
+                               @Qualifier("dirtyRequeueExpiredProcessingScript")DefaultRedisScript<List> dirtyRequeueExpiredProcessingScript,
+                               @Qualifier("dirtyFetchPartiesScript")DefaultRedisScript<List> dirtyFetchPartiesScript,
+                               @Qualifier("dirtyAckScript")DefaultRedisScript<Long> dirtyAckScript,
+                               @Qualifier("dirtyNackScript")DefaultRedisScript<Long> dirtyNackScript,
+                               @Qualifier("unreadSwapWithNonceScript")DefaultRedisScript<Long> unreadSwapWithNonceScript,
                                TimeProvider timeProvider){
         this.redis = redis;
         this.presenceTouchScript = presenceTouchScript;
         this.presenceCleanupScript = presenceCleanupScript;
         this.zsetMaxUpdateScript = zsetMaxUpdateScript;
         this.dirtyMarkScript = dirtyMarkScript;
-        this.dirtyPopDueUsersScript = dirtyPopDueUsersScript;
+        this.dirtyClaimDueUsersScript = dirtyClaimDueUsersScript;
+        this.dirtyRequeueExpiredProcessingScript = dirtyRequeueExpiredProcessingScript;
         this.dirtyFetchPartiesScript = dirtyFetchPartiesScript;
-        this.unreadSwapScript = unreadSwapScript;
+        this.dirtyAckScript = dirtyAckScript;
+        this.dirtyNackScript = dirtyNackScript;
+        this.unreadSwapWithNonceScript = unreadSwapWithNonceScript;
         this.timeProvider = timeProvider;
     }
     /* ------------- party last seq ------------- */
     public long incrPartyLastSeq(long partyId){
         Long v = redis.opsForValue().increment(ChatRedisKeys.partyLastSeq(partyId));
-        redis.opsForSet().add(ChatRedisKeys.activeParties(),String.valueOf(partyId)); // flush 대상 등록
-
         return v == null ? 0L : v;
     }
     public long getPartyLastSeq(long partyId){
         String v = redis.opsForValue().get(ChatRedisKeys.partyLastSeq(partyId));
-        if( v == null ) {
-            return 0L;
-        }
+        if(v == null){return 0L;}
         try{
             return Long.parseLong(v);
-        }catch(NumberFormatException e){
-            log.warn("redis GET partyLastSeq key={} value={}",ChatRedisKeys.partyLastSeq(partyId),v);
+        }catch(Exception e){
+            log.warn("lastSeq parse Failed partyId = {}",partyId,e);
             return 0L;
         }
     }
@@ -104,6 +110,10 @@ public class ChatRedisRepository {
         for(int i=0; i < filtered.size(); i++){
             Long pid = filtered.get(i);
             Object raw = res.get(i);
+            if(raw == null){
+                out.put(pid,0L);
+                continue;
+            }
             if(raw instanceof byte[] b){
                 try{
                     out.put(pid,Long.parseLong(new String(b,StandardCharsets.UTF_8)));
@@ -239,9 +249,10 @@ public class ChatRedisRepository {
         if(unread == null ) unread = Map.of();
         String freshKey = ChatRedisKeys.unreadFresh(userId);
         String staleKey = ChatRedisKeys.unreadStale(userId);
-        String nonce = now.toEpochMilli() + "-" + ThreadLocalRandom.current().nextInt(1_000_000);
-        String tmpFreshKey = ChatRedisKeys.unreadFreshTmp(userId,nonce);
-        String tmpStaleKey = ChatRedisKeys.unreadStaleTmp(userId,nonce);
+        String nonceKey = now.toEpochMilli() + "-" + ThreadLocalRandom.current().nextInt(1_000_000);
+        String nonce = String.valueOf(now.toEpochMilli());
+        String tmpFreshKey = ChatRedisKeys.unreadFreshTmp(userId,nonceKey);
+        String tmpStaleKey = ChatRedisKeys.unreadStaleTmp(userId,nonceKey);
 
         long freshSec = ChatRedisTtl.UNREAD_FRESH_TTL.getSeconds();
         long staleSec = ChatRedisTtl.UNREAD_STALE_TTL.getSeconds();
@@ -271,8 +282,11 @@ public class ChatRedisRepository {
            return null;
         });
         Long swap = redis.execute(
-                unreadSwapScript,
-                List.of(freshKey,staleKey,tmpFreshKey,tmpStaleKey),
+                unreadSwapWithNonceScript,
+                List.of(
+                        freshKey,staleKey,tmpFreshKey,tmpStaleKey,ChatRedisKeys.unreadNonce(userId)
+                ),
+                nonceAsNumber(nonce),
                 String.valueOf(freshSec),
                 String.valueOf(staleSec)
         );
@@ -280,7 +294,7 @@ public class ChatRedisRepository {
         return swap != null && swap == 1L;
     }
 
-    /* ------------- dirty (Lua) ------------- */
+    /* ------------- dirty (claim/ack/nack) ------------- */
     public boolean markDirtyUserParty(long userId, long partyId, Duration delay){
         long nextAt = timeProvider.now().plus(delay).toEpochMilli();
         long ttlMs = ChatRedisTtl.DIRTY_SET_TTL.toMillis();
@@ -294,39 +308,50 @@ public class ChatRedisRepository {
         );
         return r != null && r == 1L;
     }
-    public List<String> popDueDirtyUsers(int limit){
-        Object o = redis.execute(
-                dirtyPopDueUsersScript,
-                List.of(ChatRedisKeys.dirtyUsers()),
-                String.valueOf(timeProvider.now().toEpochMilli()),
+    public List<String> claimDueDirtyUsers(int limit){
+        long now = timeProvider.now().toEpochMilli();
+        Object raw = redis.execute(
+                dirtyClaimDueUsersScript,
+                List.of(ChatRedisKeys.dirtyUsers(),ChatRedisKeys.dirtyProcessing()),
+                String.valueOf(now),
+                String.valueOf(limit),
+                String.valueOf(ChatRedisTtl.DIRTY_PROCESSING_LEASE.toMillis())
+        );
+        return castStringList(raw);
+    }
+    public List<String> requeueExpiredProcessing(int limit){
+        long now = timeProvider.now().toEpochMilli();
+        Object raw = redis.execute(
+                dirtyRequeueExpiredProcessingScript,
+                List.of(ChatRedisKeys.dirtyUsers(),ChatRedisKeys.dirtyProcessing()),
+                String.valueOf(now),
                 String.valueOf(limit)
         );
-        if(o instanceof List<?> list){
-            List<String> out = new ArrayList<>();
-            for(Object x : list){
-                if(x != null){
-                    out.add(String.valueOf(x));
-                }
-            }
-            return out;
-        }
-        return List.of();
+        return castStringList(raw);
     }
-    public List<String> fetchAndClearDirtyParties(long userId){
-        Object o = redis.execute(
+    public List<String> fetchDirtyParties(long userId){
+        Object raw = redis.execute(
                 dirtyFetchPartiesScript,
                 List.of(ChatRedisKeys.dirtyUserParties(userId))
         );
-        if(o instanceof List<?> list){
-            List<String> out = new ArrayList<>();
-            for(Object x : list){
-                if(x != null){
-                    out.add(String.valueOf(x));
-                }
-            }
-            return out;
-        }
-        return List.of();
+        return castStringList(raw);
+    }
+    public boolean ackDirty(long userId){
+        Long r = redis.execute(
+                dirtyAckScript,
+                List.of(ChatRedisKeys.dirtyProcessing(), ChatRedisKeys.dirtyUserParties(userId), ChatRedisKeys.dirtyRetry(userId)),
+                String.valueOf(userId)
+        );
+        return r != null && r == 1L;
+    }
+    public boolean nackDirty(long userId, long nextRetryAtMillis){
+        Long r = redis.execute(
+                dirtyNackScript,
+                List.of(ChatRedisKeys.dirtyUsers(),ChatRedisKeys.dirtyProcessing()),
+                String.valueOf(userId),
+                String.valueOf(nextRetryAtMillis)
+        );
+        return r != null && r == 1L;
     }
     public long incrDirtyRetry(long userId){
         String key = ChatRedisKeys.dirtyRetry(userId);
@@ -393,5 +418,28 @@ public class ChatRedisRepository {
         }
         return out;
     }
+    private List<String> castStringList(Object raw){
+        if(raw == null) return List.of();
+        if(raw instanceof List<?> list){
+            List<String> out = new ArrayList<>();
+            for(Object o : list){
+                if( o == null) continue;
+                try {
+                    out.add(String.valueOf(o));
+                }catch(Exception ignore){
 
+                }
+            }
+            return out;
+        }
+        return List.of();
+    }
+    private String nonceAsNumber(String nonce){
+        try{
+            Long.parseLong(nonce);
+            return nonce;
+        }catch(Exception e){
+            return "0";
+        }
+    }
 }

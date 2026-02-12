@@ -103,24 +103,8 @@ public class ChatCacheLuaConfig {
                 """);
         return script;
     }
-    @Bean("dirtyPopDueUsersScript")
-    public DefaultRedisScript<List> dirtyPopDueUsersScript(){
-        DefaultRedisScript<List> script = new DefaultRedisScript<>();
-        script.setResultType(List.class);
-        script.setScriptText("""
-                local key = KEYS[1]
-                local now = tonumber(ARGV[1])
-                local limit = tonumber(ARGV[2])
-                if not key or not now or not limit or limit <= 0 then return {} end
-                local members = redis.call('ZRANGEBYSCORE',key,'-inf',now, 'LIMIT',0,limit)
-                if members and #members then
-                    redis.call('DEL',key,unpack(members))
-                    return members
-                end
-                return {}
-        """);
-        return script;
-    }
+
+
     @Bean("dirtyClaimDueUsersScript")
     public DefaultRedisScript<List> dirtyClaimDueUsersScript(){
         DefaultRedisScript<List> script = new DefaultRedisScript<>();
@@ -147,7 +131,18 @@ public class ChatCacheLuaConfig {
         DefaultRedisScript<List> script = new DefaultRedisScript<>();
         script.setResultType(List.class);
         script.setScriptText("""
-                
+                local key = KEYS[1]
+                local proc = KEYS[2]
+                local now = ARGV[1]
+                local lim = ARGV[2]
+                if not key or not proc or not now or not lim or lim <=0 then return {} end
+                local users = redis.call('ZRANGEBYSCORE',proc,'-inf',now,'LIMIT',lim)
+                if not users or #users == 0 then return {} end
+                for _, u in ipairs(users) do
+                    redis.call('ZREM',proc,u)
+                    redis.call('ZADD',key,now,u)
+                end
+                return users
                 """);
         return script;
     }
@@ -163,8 +158,62 @@ public class ChatCacheLuaConfig {
         """);
         return script;
     }
-    @Bean("unreadSwapScript")
-    public DefaultRedisScript<Long> unreadSwapScript(){
+
+    /**
+     * ack success
+     * KEYS[1] = dirty Processing
+     * KEYS[2] = dirtyUserParties
+     * KEYS[3] = dirtyRetry
+     * ARGV[1] = userId
+     * @return 1/0
+     */
+    @Bean("dirtyAckScript")
+    public DefaultRedisScript<Long> dirtyAckScript(){
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setResultType(Long.class);
+        script.setScriptText("""
+                local key = KEYS[1]
+                local parties = KEYS[2]
+                local retry = KEYS[3]
+                local userId = ARGV[1]
+                if not key or not parties or not retry or not userId then return 0 end
+                redis.call('ZREM',key,userId)
+                redis.call('DEL',parties)
+                redis.call('DEL',retry)
+                return 1
+                """);
+        return script;
+    }
+    @Bean("dirtyNackScript")
+    public DefaultRedisScript<Long> dirtyNackScript(){
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setResultType(Long.class);
+        script.setScriptText("""
+                local key = KEYS[1]
+                local proc = KEYS[2]
+                local userId = ARGV[1]
+                local nextAt = tonumber(ARGV[2])
+                if not key or not proc or not userId or not nextAt then return 0 end
+                redis.call('ZREM',proc,userId)
+                redis.call('ZADD',key,nextAt,userId)
+                """);
+        return script;
+    }
+
+    /**
+     * unread swap with nonce (원자 1/0) :
+     * KEYS[1] : freshKey
+     * KEYS[2] : staleKey
+     * KEYS[3] : tmpFreshKey
+     * KEYS[4] : tmpStaleKey
+     * KEYS[5] : nonceKey
+     * ARGV[1] : nonce (numeric string)
+     * ARGV[2] : freshTtlSec
+     * ARGV[3] : staleTtlSec
+     * return 1/0
+     */
+    @Bean("unreadSwapWithNonceScript")
+    public DefaultRedisScript<Long> unreadSwapWithNonceScript(){
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
         script.setResultType(Long.class);
         script.setScriptText("""
@@ -172,23 +221,29 @@ public class ChatCacheLuaConfig {
                 local staleKey = KEYS[2]
                 local tmpFresh = KEYS[3]
                 local tmpStale = KEYS[4]
-                local freshTtl = tonumber(ARGV[1])
-                local staleTtl = tonumber(ARGV[2])
+                local nonceKey = KEYS[5]
                 
-                if not freshKey or not staleKey or not tmpFresh or not tmpStale or not freshTtl or not staleTtl then
-                    return 0
+                local nonce = tonumber(ARGV[1])
+                local freshTtl = tonumber(ARGV[2])
+                local staleTtl = tonumber(ARGV[3])
+                
+                if not freshKey or not staleKey or not tmpFresh or not tmpStale or not nonceKey
+                or not nonce or not freshTtl or not stale Ttl then return 0 end
+                
+                local cur = redis.call('GET',nonceKey)
+                if cur then
+                    local curNum = tonumber(cur)
+                    if curNum and curNum > nonce then return 0 end
                 end
                 
-                if redis.call('EXISTS', tmpFresh) == 0 or redis.call('EXISTS',tmpStale) == 0 then
-                    return 0
-                end
+                if redis.call('EXISTS',tmpFresh) == 0 or redis.call('EXISTS',tmpStale == 0 then return 0 end
+                redis.call('SET',nonceKey,tostring(nonce),'EX',staleTtl)
                 
                 redis.call('RENAME',tmpFresh,freshKey)
                 redis.call('RENAME',tmpStale,staleKey)
                 
-                redis.call('EXPIRE',freshKey,reshTtl)
+                redis.call('EXPIRE',freshKey,freshTtl)
                 redis.call('EXPIRE',staleKey,staleTtl)
-                return 1
                 """);
         return script;
     }

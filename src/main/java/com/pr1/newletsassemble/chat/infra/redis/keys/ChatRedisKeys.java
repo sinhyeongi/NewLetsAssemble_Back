@@ -9,11 +9,6 @@ public final class ChatRedisKeys {
         return PRE_FIX + "party:last_seq:" + partyId;
     }
 
-    // active parties set: flush대상
-    public static String activeParties(){
-        return PRE_FIX + "active_parties";
-    }
-
     // user:read_seq:{userId} -> ZSET member = partyId score = lastReadSeq
     public static String userReadSeq(long userId){
         return PRE_FIX + "user:read_seq:" + userId;
@@ -55,6 +50,9 @@ public final class ChatRedisKeys {
     public static String dirtyUsers(){
         return PRE_FIX + "dirty:users";
     }
+    public static String dirtyProcessing(){
+        return PRE_FIX + "dirty:processing";
+    }
     public static String dirtyUserParties(long userId){
         return PRE_FIX + "dirty:user:" + userId;
     }
@@ -67,7 +65,5 @@ public final class ChatRedisKeys {
         return PRE_FIX + "lock:flush:" + userId;
     }
 
-    public static String dirtyProcessing(){
-        return PRE_FIX + "dirty:processing";
-    }
+
 }
