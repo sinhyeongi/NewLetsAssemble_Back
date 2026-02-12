@@ -11,7 +11,7 @@ public final class ChatRedisTtl {
     // unread cache fresh + stale
     public static final Duration UNREAD_FRESH_TTL = Duration.ofSeconds(3);
     public static final Duration UNREAD_STALE_TTL = Duration.ofSeconds(30);
-
+    public static final Duration UNREAD_TMP_TTL = Duration.ofSeconds(30);
     //singleflight leader lock
     public static final Duration LEADER_LOCK_TTL = Duration.ofMillis(1200);
     public static final Duration LEADER_COMPUTE_TIMEOUT = Duration.ofMillis(900);

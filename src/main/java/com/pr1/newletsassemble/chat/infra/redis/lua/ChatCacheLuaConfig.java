@@ -133,8 +133,8 @@ public class ChatCacheLuaConfig {
         script.setScriptText("""
                 local key = KEYS[1]
                 local proc = KEYS[2]
-                local now = ARGV[1]
-                local lim = ARGV[2]
+                local now = tonumber(ARGV[1])
+                local lim = tonumber(ARGV[2])
                 if not key or not proc or not now or not lim or lim <=0 then return {} end
                 local users = redis.call('ZRANGEBYSCORE',proc,'-inf',now,'LIMIT',lim)
                 if not users or #users == 0 then return {} end
@@ -191,11 +191,22 @@ public class ChatCacheLuaConfig {
         script.setScriptText("""
                 local key = KEYS[1]
                 local proc = KEYS[2]
+                local parties = KEYS[3]
+                
                 local userId = ARGV[1]
                 local nextAt = tonumber(ARGV[2])
+                local partiesTtlMs = tonumber(ARGV[3])
+                
                 if not key or not proc or not userId or not nextAt then return 0 end
                 redis.call('ZREM',proc,userId)
                 redis.call('ZADD',key,nextAt,userId)
+                
+                local pttl = redis.call('PTTL',parties)
+                if pttl < 0 or pttl < partiesTtlMs then
+                    redis.call('PEXPIRE',parties,partiesTtlMs)
+                end
+                
+                return 1
                 """);
         return script;
     }
@@ -228,15 +239,17 @@ public class ChatCacheLuaConfig {
                 local staleTtl = tonumber(ARGV[3])
                 
                 if not freshKey or not staleKey or not tmpFresh or not tmpStale or not nonceKey
-                or not nonce or not freshTtl or not stale Ttl then return 0 end
+                or not nonce or not freshTtl or not staleTtl then return 0 end
                 
                 local cur = redis.call('GET',nonceKey)
                 if cur then
                     local curNum = tonumber(cur)
-                    if curNum and curNum > nonce then return 0 end
+                    if curNum and curNum >= nonce then
+                        return 0
+                    end
                 end
                 
-                if redis.call('EXISTS',tmpFresh) == 0 or redis.call('EXISTS',tmpStale == 0 then return 0 end
+                if redis.call('EXISTS',tmpFresh) == 0 or redis.call('EXISTS',tmpStale) == 0 then return 0 end
                 redis.call('SET',nonceKey,tostring(nonce),'EX',staleTtl)
                 
                 redis.call('RENAME',tmpFresh,freshKey)
@@ -244,6 +257,7 @@ public class ChatCacheLuaConfig {
                 
                 redis.call('EXPIRE',freshKey,freshTtl)
                 redis.call('EXPIRE',staleKey,staleTtl)
+                return 1
                 """);
         return script;
     }

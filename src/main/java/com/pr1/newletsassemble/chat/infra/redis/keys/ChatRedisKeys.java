@@ -36,10 +36,13 @@ public final class ChatRedisKeys {
         return PRE_FIX + "unread:fresh:tmp:" + userId + ":" + nonce;
     }
     public static String unreadStaleTmp(long userId,String nonce){
-        return PRE_FIX + "unread:fresh:tmp:" + userId + ":" + nonce;
+        return PRE_FIX + "unread:stale:tmp:" + userId + ":" + nonce;
     }
-    public static String unreadNonce(long userId){
+    public static String unreadNonceSeq(long userId){
         return PRE_FIX + "unread:nonce:" + userId;
+    }
+    public static String unreadNonceApplied(long userId){
+        return PRE_FIX + "unread:nonce_applied:" + userId;
     }
     //leader lock
     public static String unreadLeaderLock(Long userId){

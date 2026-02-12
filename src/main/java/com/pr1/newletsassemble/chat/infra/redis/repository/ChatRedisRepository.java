@@ -250,43 +250,47 @@ public class ChatRedisRepository {
         String freshKey = ChatRedisKeys.unreadFresh(userId);
         String staleKey = ChatRedisKeys.unreadStale(userId);
         String nonceKey = now.toEpochMilli() + "-" + ThreadLocalRandom.current().nextInt(1_000_000);
-        String nonce = String.valueOf(now.toEpochMilli());
+        long nonce = Optional.ofNullable(redis.opsForValue().increment(ChatRedisKeys.unreadNonceSeq(userId))).orElse(1L);
         String tmpFreshKey = ChatRedisKeys.unreadFreshTmp(userId,nonceKey);
         String tmpStaleKey = ChatRedisKeys.unreadStaleTmp(userId,nonceKey);
 
         long freshSec = ChatRedisTtl.UNREAD_FRESH_TTL.getSeconds();
         long staleSec = ChatRedisTtl.UNREAD_STALE_TTL.getSeconds();
+        long tmpTTL = ChatRedisTtl.UNREAD_TMP_TTL.getSeconds();
 
         Map<String,String> payload = new HashMap<>();
         for(var e : unread.entrySet()){
             payload.put(String.valueOf(e.getKey()),String.valueOf(Math.max(0L,e.getValue())));
         }
+        try {
+            redis.executePipelined((RedisCallback<Object>) con -> {
+                byte[] tf = tmpFreshKey.getBytes(StandardCharsets.UTF_8);
+                byte[] ts = tmpStaleKey.getBytes(StandardCharsets.UTF_8);
 
-        redis.executePipelined((RedisCallback<Object>) con ->{
-            byte[] tf = tmpFreshKey.getBytes(StandardCharsets.UTF_8);
-            byte[] ts = tmpStaleKey.getBytes(StandardCharsets.UTF_8);
+                con.commands().del(tf);
+                con.commands().del(ts);
 
-            con.commands().del(tf);
-            con.commands().del(ts);
-
-            if(!payload.isEmpty()){
-                for(var e : payload.entrySet()){
-                    byte[] f = e.getKey().getBytes(StandardCharsets.UTF_8);
-                    byte[] v = e.getValue().getBytes(StandardCharsets.UTF_8);
-                    con.commands().hSet(tf,f,v);
-                    con.commands().hSet(ts,f,v);
+                if (!payload.isEmpty()) {
+                    for (var e : payload.entrySet()) {
+                        byte[] f = e.getKey().getBytes(StandardCharsets.UTF_8);
+                        byte[] v = e.getValue().getBytes(StandardCharsets.UTF_8);
+                        con.commands().hSet(tf, f, v);
+                        con.commands().hSet(ts, f, v);
+                    }
                 }
-            }
-            con.commands().expire(tf,freshSec);
-            con.commands().expire(ts,staleSec);
-           return null;
-        });
+                con.commands().expire(tf, tmpTTL);
+                con.commands().expire(ts, tmpTTL);
+                return null;
+            });
+        }catch(Exception e){
+            return false;
+        }
         Long swap = redis.execute(
                 unreadSwapWithNonceScript,
                 List.of(
-                        freshKey,staleKey,tmpFreshKey,tmpStaleKey,ChatRedisKeys.unreadNonce(userId)
+                        freshKey,staleKey,tmpFreshKey,tmpStaleKey,ChatRedisKeys.unreadNonceApplied(userId)
                 ),
-                nonceAsNumber(nonce),
+                String.valueOf(nonce),
                 String.valueOf(freshSec),
                 String.valueOf(staleSec)
         );
@@ -345,11 +349,13 @@ public class ChatRedisRepository {
         return r != null && r == 1L;
     }
     public boolean nackDirty(long userId, long nextRetryAtMillis){
+        long ttlMs = ChatRedisTtl.DIRTY_PARTIES_TTL.toMillis();
         Long r = redis.execute(
                 dirtyNackScript,
-                List.of(ChatRedisKeys.dirtyUsers(),ChatRedisKeys.dirtyProcessing()),
+                List.of(ChatRedisKeys.dirtyUsers(),ChatRedisKeys.dirtyProcessing(),ChatRedisKeys.dirtyUserParties(userId)),
                 String.valueOf(userId),
-                String.valueOf(nextRetryAtMillis)
+                String.valueOf(nextRetryAtMillis),
+                String.valueOf(ttlMs)
         );
         return r != null && r == 1L;
     }
@@ -433,13 +439,5 @@ public class ChatRedisRepository {
             return out;
         }
         return List.of();
-    }
-    private String nonceAsNumber(String nonce){
-        try{
-            Long.parseLong(nonce);
-            return nonce;
-        }catch(Exception e){
-            return "0";
-        }
     }
 }
