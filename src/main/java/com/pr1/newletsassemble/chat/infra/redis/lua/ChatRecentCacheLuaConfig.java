@@ -18,20 +18,13 @@ public class ChatRecentCacheLuaConfig {
                 local val = ARGV[1]
                 local maxSize = tonumber(ARGV[2])
                 local ttlSec = tonumber(ARGV[3])
-                local thresholdSec = tonumber(ARGV[4])
+                
                 if not key or not val or not maxSize or maxSize <= 0 or not ttlSec or ttlSec <= 0 then return 0 end
                 
                 redis.call('LPUSH',key,val)
                 redis.call('LTRIM',key,0,maxSize -1)
-                if not thresholdSec or thresholdSec <= 0 then
-                    thresholdSec = math.floor(ttlSec / 3)
-                    if thresholdSec < 1 then thresholdSec = 1
-                    end
-                end
-                local t = redis.call('TTL',key)
-                if t == -1 or t == -2 or t <= thresholdSec then
-                    redis.call('EXPIRE',key,ttlSec)
-                end
+                redis.call('EXPIRE',key,ttlSec)
+                
                 return 1
                 """);
         return script;

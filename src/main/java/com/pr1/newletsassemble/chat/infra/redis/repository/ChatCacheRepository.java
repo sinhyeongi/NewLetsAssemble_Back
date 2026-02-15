@@ -5,6 +5,7 @@ import com.pr1.newletsassemble.chat.infra.redis.ChatRedisProperties;
 import com.pr1.newletsassemble.chat.infra.redis.keys.ChatCacheKeys;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Repository;
@@ -30,16 +31,15 @@ public class ChatCacheRepository {
 
         long max = properties.chatCache().partyRecentMax();
         long ttlSec = properties.chatCache().partyRecentTtl().toSeconds();
-        long thresholdSec = Math.max(1L , ttlSec / 3L);
+
         Long r = redis.execute(
                 recentPushTrimScript,
                 List.of(key),
                 payloadJson,
                 String.valueOf(max),
-                String.valueOf(ttlSec),
-                String.valueOf(thresholdSec)
+                String.valueOf(ttlSec)
         );
-        return r != null && r == 1L;
+        return r != null && r == 1;
     }
 
     public List<String> getRecentRaw(long partyId, int limit){

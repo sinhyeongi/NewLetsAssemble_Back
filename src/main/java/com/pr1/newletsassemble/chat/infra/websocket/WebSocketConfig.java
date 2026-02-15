@@ -1,5 +1,6 @@
-package com.pr1.newletsassemble.global.config;
+package com.pr1.newletsassemble.chat.infra.websocket;
 
+import com.pr1.newletsassemble.chat.infra.websocket.properties.WebSocketProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;

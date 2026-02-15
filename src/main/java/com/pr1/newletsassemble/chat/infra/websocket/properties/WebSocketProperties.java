@@ -1,4 +1,4 @@
-package com.pr1.newletsassemble.global.config;
+package com.pr1.newletsassemble.chat.infra.websocket.properties;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

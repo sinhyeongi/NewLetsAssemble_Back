@@ -1,4 +1,4 @@
-package com.pr1.newletsassemble.chat.application.scheduler;
+package com.pr1.newletsassemble.chat.application.scheduler.properties;
 
 import lombok.Getter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
