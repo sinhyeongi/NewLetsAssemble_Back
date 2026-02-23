@@ -4,6 +4,7 @@ import com.pr1.newletsassemble.auth.api.dto.LoginRequest;
 import com.pr1.newletsassemble.auth.api.dto.LoginTokens;
 import com.pr1.newletsassemble.auth.api.dto.LogoutRequest;
 import com.pr1.newletsassemble.auth.api.dto.ReissueTokens;
+import com.pr1.newletsassemble.auth.infra.redis.key.RedisKeys;
 import com.pr1.newletsassemble.global.security.jwt.JwtProperties;
 import com.pr1.newletsassemble.global.security.jwt.JwtProvider;
 import com.pr1.newletsassemble.global.security.jwt.RefreshTokenAuth;
@@ -156,7 +157,7 @@ public class AuthService {
      * Reissue
      */
     @Transactional
-    public ReissueTokens reissue(String refreshCookieValue, DeviceInfo deviceInfo, HttpServletResponse res){
+    public ReissueTokens reissue(String refreshCookieValue, DeviceInfo deviceInfo){
         if(refreshCookieValue == null || refreshCookieValue.isBlank()){
             throw ApiException.of(AuthErrorCode.AUTH_REFRESH_EXPIRED);
         }
@@ -227,8 +228,8 @@ public class AuthService {
 
         String access = jwtProvider.createAccessToken(userId,role.getAuthority(),sid,serverVersion,deviceKey);
         session.touch(timeProvider.now());
-        counter.resetSid(userId,sid);
-        counter.resetUser(userId);
+        counter.resetSid(RedisKeys.deviceKeyMismatchCounterSid(userId,sid));
+        counter.resetUser(RedisKeys.deviceKeyMismatchCounterUser(userId));
         return new ReissueTokens(access,newRefreshToken);
     }
     /**

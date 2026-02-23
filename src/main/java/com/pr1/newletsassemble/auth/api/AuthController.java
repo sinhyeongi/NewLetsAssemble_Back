@@ -32,7 +32,7 @@ public class AuthController {
     public ApiResponse<ReissueResponse> reissue(HttpServletRequest req,
                                                 HttpServletResponse res,
                                                 @CookieValue(name = "refresh", required = false)String refresh){
-        ReissueTokens reissueResponse = authService.reissue(refresh,resolver.resolve(req),res);
+        ReissueTokens reissueResponse = authService.reissue(refresh,resolver.resolve(req));
         cookieWriter.setRefreshCookie(res,reissueResponse.newRefresh());
         return ApiResponse.ok(new ReissueResponse(reissueResponse.access()));
     }
