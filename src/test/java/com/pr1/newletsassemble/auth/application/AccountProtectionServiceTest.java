@@ -1,6 +1,6 @@
 package com.pr1.newletsassemble.auth.application;
 
-import com.pr1.newletsassemble.auth.infra.jwt.JwtProperties;
+import com.pr1.newletsassemble.global.security.jwt.JwtProperties;
 import com.pr1.newletsassemble.auth.infra.logging.SecurityEventLogger;
 import com.pr1.newletsassemble.auth.infra.redis.key.RedisKeys;
 import com.pr1.newletsassemble.auth.infra.redis.repository.DeviceKeyMismatchCounterRepository;

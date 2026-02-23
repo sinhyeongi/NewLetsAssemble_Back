@@ -1,4 +1,4 @@
-package com.pr1.newletsassemble.auth.infra.jwt;
+package com.pr1.newletsassemble.global.security.jwt;
 
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;

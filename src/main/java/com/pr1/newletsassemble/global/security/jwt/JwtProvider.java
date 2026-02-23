@@ -1,4 +1,4 @@
-package com.pr1.newletsassemble.auth.infra.jwt;
+package com.pr1.newletsassemble.global.security.jwt;
 
 import com.pr1.newletsassemble.global.error.AuthErrorCode;
 import com.pr1.newletsassemble.global.time.TimeProvider;
@@ -27,7 +27,7 @@ public class JwtProvider {
         this.key = Keys.hmacShaKeyFor(keyBytes);
     }
     /* =================== Create Token ================== */
-    private String createToken(Long userId,String role, long expirationMs, JwtTokenType type,String sid,long version,String deviceKey){
+    private String createToken(Long userId, String role, long expirationMs, JwtTokenType type, String sid, long version, String deviceKey){
         Instant now = timeProvider.now();
         JwtBuilder builder = Jwts.builder()
                 .setSubject(String.valueOf(userId))

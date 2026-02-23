@@ -1,13 +1,13 @@
-package com.pr1.newletsassemble.auth.infra.security;
+package com.pr1.newletsassemble.global.security.handler;
 
 
 import com.pr1.newletsassemble.auth.application.AuthCookieWriter;
+import com.pr1.newletsassemble.auth.infra.security.AuthFailureException;
 import com.pr1.newletsassemble.global.api.ApiResponse;
 import com.pr1.newletsassemble.global.error.AuthErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;

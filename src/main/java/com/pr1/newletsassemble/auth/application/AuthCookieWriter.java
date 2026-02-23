@@ -1,6 +1,6 @@
 package com.pr1.newletsassemble.auth.application;
 
-import com.pr1.newletsassemble.auth.infra.jwt.JwtProperties;
+import com.pr1.newletsassemble.global.security.jwt.JwtProperties;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;

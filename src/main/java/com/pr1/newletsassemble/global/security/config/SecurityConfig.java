@@ -1,8 +1,12 @@
-package com.pr1.newletsassemble.auth.infra.security;
+package com.pr1.newletsassemble.global.security.config;
 
 import com.pr1.newletsassemble.auth.application.SessionActiveService;
-import com.pr1.newletsassemble.auth.infra.jwt.JwtProperties;
-import com.pr1.newletsassemble.auth.infra.jwt.JwtProvider;
+import com.pr1.newletsassemble.auth.infra.security.CustomUserDetailsService;
+import com.pr1.newletsassemble.global.security.filter.JwtAuthenticationFilter;
+import com.pr1.newletsassemble.global.security.handler.JwtAccessDeniedHandler;
+import com.pr1.newletsassemble.global.security.handler.JwtAuthEntryPoint;
+import com.pr1.newletsassemble.global.security.jwt.JwtProperties;
+import com.pr1.newletsassemble.global.security.jwt.JwtProvider;
 import com.pr1.newletsassemble.global.time.TimeProvider;
 import com.pr1.newletsassemble.auth.infra.redis.repository.TokenVersionRepository;
 import lombok.RequiredArgsConstructor;
