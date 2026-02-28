@@ -1,6 +1,7 @@
 package com.pr1.newletsassemble.chat.domain;
 
 import com.pr1.newletsassemble.party.domain.Party;
+import com.pr1.newletsassemble.user.api.dto.ChatMessageDto;
 import com.pr1.newletsassemble.user.domain.User;
 import jakarta.persistence.*;
 import lombok.AccessLevel;

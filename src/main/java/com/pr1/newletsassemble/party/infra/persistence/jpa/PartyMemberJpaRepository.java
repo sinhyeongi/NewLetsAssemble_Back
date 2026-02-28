@@ -24,4 +24,5 @@ public interface PartyMemberJpaRepository extends JpaRepository<PartyMember, Lon
             @Param("seq")long seq,
             @Param("now")Instant now
     );
+    boolean existsByParty_IdAndUser_Id(long partyId,long userId);
 }

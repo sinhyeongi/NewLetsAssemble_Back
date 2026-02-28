@@ -14,10 +14,6 @@ public final class ChatRedisKeys {
         return PRE_FIX + "user:read_seq:" + userId;
     }
 
-    // party:members:{partyId} -> SET member=userId
-    public static String partyMembers(long partyId){
-        return PRE_FIX + "party:members:" + partyId;
-    }
 
     // party:presence:{partyId} -> ZSET member=userId score=expireAtMillis
     public static String partyPresence(long partyId){

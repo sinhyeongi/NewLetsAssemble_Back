@@ -1,10 +1,12 @@
 package com.pr1.newletsassemble.chat.api;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Controller;
 
 @Controller
+@RequiredArgsConstructor
 public class StompChatController {
 
     @MessageMapping("/ping")

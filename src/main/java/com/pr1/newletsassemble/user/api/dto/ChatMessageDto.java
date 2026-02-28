@@ -22,8 +22,8 @@ public record ChatMessageDto(
                 c.getSender().getId(),
                 c.getType(),
                 c.getClientMessageId(),
-                c.isDeleted() ? "" : c.getContent(),
-                c.isDeleted(),
+                c.getContent(),
+                c.getdeletedAt(),
                 c.getCreatedAt()
         );
     }
