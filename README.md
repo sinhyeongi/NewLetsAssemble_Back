@@ -129,7 +129,7 @@ INCR 같은 연산을 원자적으로 수행할 수 있다.
 ---
 
 # 📂 프로젝트 구조
-
+```
 src/main/java/com/pr1/newletsassemble
 
 auth
@@ -158,6 +158,7 @@ global
 ├─ config
 ├─ security
 └─ time
+```
 
 ---
 
@@ -267,6 +268,7 @@ Infra
 
 Layered Architecture 기반으로 설계하였다.
 
+```
 Presentation
 ↓
 Application
@@ -274,15 +276,18 @@ Application
 Domain
 ↓
 Infrastructure
+```
 
 ---
 
 # 🔄 PartyMember 상태 전이
 
+```
 APPLIED → APPROVED
 APPLIED → REJECTED
 APPLIED → CANCELED
 APPROVED → KICKED
+```
 
 설계 원칙
 
