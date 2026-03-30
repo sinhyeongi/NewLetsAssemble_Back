@@ -1,573 +1,228 @@
-# 🧩 New-LetsAssemble
-### 그룹 매칭 플랫폼 백엔드
+# 🧩 NewLetsAssemble
+### 그룹 매칭 플랫폼 백엔드 재구성 프로젝트
 
-> 그룹 생성, 참가 신청, 승인/거절 관리 및
-> Redis 기반 채팅 읽음 처리 시스템을 포함한 백엔드 서버
+> 기존 팀 프로젝트를 바탕으로
+> 채팅 읽음 처리와 인증/세션 구조를 중심으로 재구성하고 있는
+> 백엔드 프로젝트 (진행 중)
 
 ---
 
-# 📌 프로젝트 소개
+## 📌 핵심 문제 및 접근 방식
 
-이 프로젝트는 단순 기능 구현을 넘어
-**도메인 불변성과 데이터 정합성 유지**를 중심으로 설계하였다.
+이 프로젝트는 채팅 시스템에서 발생하는
+**읽음 처리 DB write 집중 구조를 완화하기 위해 시작되었습니다.**
 
-또한 실제 서비스 환경에서 발생할 수 있는 문제를 해결하는 것을 목표로 구현하였다.
+기존 구조에서는 사용자의 읽음 이벤트마다 DB update가 발생하여
+동시 요청이 증가할 경우 write 부하가 집중되는 문제가 있었습니다.
 
-설계 목표
+현재는 읽음 상태를 Redis에 먼저 반영하고,
+Dirty Queue와 Scheduler를 통해 DB에 반영하는 구조로 분리하고 있습니다.
 
-- 상태 전이(State Transition) 기반 도메인 설계
-- 동시성 환경에서 인원 제한 불변성 보장
-- Redis 기반 채팅 읽음 처리 시스템 구현
-- 멀티 인스턴스 환경 메시지 순서 관리
-- Redis 기반 캐시 전략을 통한 데이터베이스 부하 감소
-- 시간 의존 로직 테스트 가능성 확보
+이를 통해 요청 처리 흐름과 DB 반영 시점을 분리하는 방향으로 구조를 재구성하고 있습니다.
+
+---
+
+## 📌 프로젝트 개요
+
+NewLetsAssemble은 기존 프론트엔드와 백엔드가 함께 구성된 프로젝트를 기반으로,
+백엔드 구조를 분리하고 처리 흐름 중심으로 다시 구성하고 있는 프로젝트입니다.
+
+기존 프로젝트는 기능 구현 중심의 구조였으며,
+채팅과 같이 트래픽이 집중되는 영역에서 처리 흐름이 분리되어 있지 않았습니다.
+
+현재 프로젝트에서는 다음 영역을 중심으로 구조를 재구성하고 있습니다.
+
+- 채팅 읽음 처리 구조 분리
+- unread 계산 캐시 구조 구성
+- Scheduler 기반 DB flush
 - JWT 기반 인증 및 세션 관리
 
 ---
 
-# 📌 주요 기능
+## 🎯 진행 목적
 
-- 파티 생성 및 참가 신청
-- PartyMember 상태 전이 기반 그룹 관리
-- Redis INCR 기반 메시지 순서 관리
-- Redis 기반 채팅 읽음 처리
-- Dirty Queue 기반 읽음 정보 지연 반영 (Deferred Flush)
-- Scheduler 기반 Batch DB Flush
-- Redis Recent Cache 기반 채팅 조회 최적화
-- JWT 기반 인증
-- Device 기반 세션 관리
+- 읽음 요청이 DB write로 직접 연결되는 구조 완화
+- Redis 기반 상태 저장 및 지연 반영 구조 구성
+- 인증과 세션 상태 분리
+- 동시 요청 환경에서 원자적 처리 보장
 
 ---
 
-# 📊 시스템 아키텍처
+## 🧱 기술 스택
 
-```mermaid
-flowchart TD
-
-Client[React Client]
-Nginx[Nginx Reverse Proxy]
-API[Spring Boot API]
-WS[Spring Boot WebSocket]
-Redis[(Redis)]
-MySQL[(MySQL)]
-
-Client --> Nginx
-Nginx --> API
-Nginx --> WS
-
-API --> Redis
-API --> MySQL
-
-WS --> Redis
-WS --> MySQL
-```
-
-Spring Boot 애플리케이션은
-API 서버와 WebSocket 서버 역할을 동시에 수행하도록 구성하였다.
-
----
-
-# 🧭 채팅 읽음 처리 시스템 아키텍처
-
-채팅 읽음 처리 시스템은 **Redis 기반 Dirty Queue 구조**로 설계하였다.
-
-목표
-
-- read ack 트래픽을 DB에서 Redis로 분산
-- DB update를 batch 처리
-- 단조 증가(last_read_seq) 불변성 보장
-
-```mermaid
-flowchart LR
-
-Client[Client]
-Backend[Spring Server]
-Redis[(Redis)]
-Scheduler[Flush Scheduler]
-DB[(MySQL)]
-
-Client --> Backend
-Backend --> Redis
-
-Redis --> Scheduler
-Scheduler --> DB
-```
-
----
-
-# ❓ Why Redis
-
-채팅 시스템에서 **읽음 처리(read ack)** 는 매우 빈번하게 발생한다.
-
-모든 read ack 요청을 DB에 직접 반영할 경우
-
-- 높은 write 트래픽 발생
-- DB 부하 증가
-- 성능 저하
-
-이를 해결하기 위해 다음 구조를 사용하였다.
-
-```
-Read ACK
-   ↓
-Redis 즉시 반영
-   ↓
-Dirty Queue 기록
-   ↓
-Scheduler Batch Flush
-   ↓
-DB 업데이트
-```
-
-이 구조를 통해 **DB write 트래픽을 크게 줄일 수 있다.**  
-
-또한 Redis는 단일 스레드 기반으로 동작하기 때문에  
-INCR 같은 연산을 원자적으로 수행할 수 있다.
-
-따라서 메시지 순서 관리에 적합하다.
-
----
-
-# 📂 프로젝트 구조
-```
-src/main/java/com/pr1/newletsassemble
-
-auth
-├─ api
-├─ application
-└─ infra
-
-party
-├─ domain
-└─ infra
-
-chat
-├─ api
-├─ application
-│  ├─ port
-│  └─ scheduler
-├─ domain
-└─ infra
-
-user
-├─ api
-├─ domain
-└─ infra
-
-global
-├─ config
-├─ security
-└─ time
-```
-
----
-
-# 🗄 데이터베이스 설계 (ERD)
-
-```mermaid
-erDiagram
-
-USER {
-   bigint user_id PK
-   varchar email
-   varchar password
-   varchar phone
-   varchar name
-   varchar nick_name
-   enum gender
-   date birth_date
-   enum role
-   int point
-   datetime last_login
-   datetime suspended_until
-   datetime deleted_at
-}
-
-PARTY {
-   bigint party_id PK
-   bigint host_user_id FK
-   varchar title
-   boolean is_online
-   varchar area
-   text content
-   int personnel
-   varchar notification
-   datetime created_at
-}
-
-PARTY_MEMBER {
-   bigint party_member_id PK
-   bigint party_id FK
-   bigint user_id FK
-   enum status
-   datetime applied_at
-   boolean is_black
-   varchar nick_name
-   bigint last_read_seq
-   datetime last_read_at
-}
-
-CHAT {
-   bigint id PK
-   bigint party_id FK
-   bigint sender_id FK
-   bigint seq
-   varchar client_message_id
-   enum type
-   text content
-   datetime created_at
-   datetime deleted_at
-}
-
-PARTY_CHAT_META {
-   bigint party_id PK
-   bigint last_seq
-   datetime updated_at
-}
-
-USER ||--o{ PARTY : creates
-PARTY ||--o{ PARTY_MEMBER : has
-USER ||--o{ PARTY_MEMBER : joins
-
-PARTY ||--o{ CHAT : contains
-USER ||--o{ CHAT : sends
-
-PARTY ||--|| PARTY_CHAT_META : meta
-```
-
----
-
-# 🧱 기술 스택
-
-Backend
-
+### Backend
 - Java 17
 - Spring Boot
-- Spring Security (JWT)
-- WebSocket + STOMP
-- JPA (Hibernate)
+- Spring Security
+- Spring Data JPA
 
-Data
+### Communication
+- REST API
+- WebSocket
+- STOMP
+- Redis Pub/Sub
 
+### Data
 - MySQL
 - Redis
-  - INCR
-  - ZSET
-  - SET
-  - LIST
 
-Infra
-
+### 개발 환경
 - Docker
-- Nginx
-- AWS EC2
+
+> Docker는 현재 개발 환경에서 Redis와 MySQL 실행 용도로 사용하고 있습니다.
 
 ---
 
-# 🏛 아키텍처
+## 🏛 프로젝트 구조
 
-Layered Architecture 기반으로 설계하였다.
-
-```
-Presentation
-↓
-Application
-↓
-Domain
-↓
-Infrastructure
+```text
+api           : REST / STOMP 진입점
+application   : 서비스, 유스케이스, 스케줄러
+domain        : 도메인 모델과 정책
+infra         : Redis, JPA, JDBC, WebSocket, Security 구현
 ```
 
 ---
 
-# 🔄 PartyMember 상태 전이
+## ⚠️ 문제 상황 : 읽음 처리 DB write 집중
 
-```
-APPLIED → APPROVED
-APPLIED → REJECTED
-APPLIED → CANCELED
-APPROVED → KICKED
-```
+기존 구조에서는
 
-설계 원칙
-
-- 실제 그룹 인원 수는 APPROVED 상태만 포함
-- 상태 변경은 트랜잭션 내에서 수행
-- 인원 검증과 상태 변경을 동일 트랜잭션에서 처리
+- 읽음 이벤트마다 DB update 발생
+- 요청 수만큼 write 증가
+- 트래픽 증가 시 DB 부하 집중
 
 ---
 
-# ⚙️ 동시성 문제 해결
+## 🔧 현재 구조
 
-파티 인원 제한 기능에서는 동시에 여러 사용자가
-참가 요청을 보낼 경우 정원 초과 문제가 발생할 수 있다.
+### 1. Redis 기반 읽음 처리
 
-예를 들어 정원이 5명인 파티에 동시에 여러 사용자가
-승인 처리될 경우 실제 인원보다 더 많은 사용자가
-참가할 수 있는 문제가 발생할 수 있다.
+- read seq를 Redis에 저장
+- DB에는 즉시 반영하지 않음
 
-이를 해결하기 위해 다음과 같은 설계를 적용하였다.
+### 2. Dirty Queue
 
-- 상태 전이(State Transition) 기반 도메인 모델 적용
-- 트랜잭션 내 인원 검증
-- APPROVED 상태 기준 인원 계산
+- 변경된 사용자/파티를 Redis 기반 queue 구조로 관리
+- 중복 flush를 줄이고 retry 가능한 형태로 처리
 
-이를 통해 동시성 환경에서도
-파티 인원 제한 불변성을 유지하도록 설계하였다.
+### 3. Scheduler 기반 DB 반영
 
----
+- Redis 데이터를 batch로 DB에 반영
 
-# 💬 채팅 읽음 처리 시스템
-
-채팅 읽음 처리는 **Redis 기반 비동기 flush 구조**로 구현하였다.
-
-핵심 아이디어
-
-- read ack → Redis 즉시 반영
-- Dirty Queue 기록
-- Scheduler가 DB batch flush
-
-이를 통해 **읽음 처리 트래픽을 Redis로 흡수하고 DB 부하를 줄였다.**
+> 읽음 상태는 더 큰 seq만 반영하도록 처리하고,
+> flush 과정에는 lock과 retry 흐름을 두고 있습니다.
 
 ---
 
-# 1️⃣ Read ACK 처리 흐름
+## 📌 전체 아키텍처
 
-```mermaid
-sequenceDiagram
-participant Client
-participant Backend
-participant Redis
-
-Client->>Backend: ACK(lastReadSeq)
-Backend->>Redis: Lua script (max update)
-Backend->>Redis: Dirty Queue 기록
-```
+![시스템 아키텍처](./images/archutecture.png)
 
 ---
 
-# 2️⃣ Dirty Queue Flush 흐름
+## 📌 구조 변화 (Before / After)
 
-```mermaid
-sequenceDiagram
-participant Scheduler
-participant Redis
-participant MySQL
-
-Scheduler->>Redis: due user claim
-Scheduler->>Redis: dirty party 조회
-Scheduler->>MySQL: batch update
-Scheduler->>Redis: ack / retry
-```
+![구조 변화 비교](./images/before_After.png)
 
 ---
 
-# 🔢 메시지 순서 관리
+## 📌 채팅 읽음 처리 흐름
 
-채팅 메시지는 Party 단위 순서를 유지해야 한다.
-
-이를 위해 Redis INCR을 사용하여
-**Party 단위 메시지 seq를 생성한다.**
-
-장점
-
-- 멀티 인스턴스 환경에서도 충돌 없는 seq 생성
-- 채팅 메시지 순서 보장
+![채팅 읽음 처리 흐름](./images/chat-flow.png)
 
 ---
 
-# 📦 채팅 캐시 전략 (Recent Cache)
+## 📊 채팅 처리 흐름
 
-채팅방 진입 시 성능을 위해
-최근 메시지를 Redis에 캐싱하였다.
+### 메시지 처리 구조
+- Redis sequence 기반 메시지 순서 관리 구조를 두고 있음
+- Redis Pub/Sub 기반 전달 구조를 구성 중
+- 실제 메시지 송신 유스케이스는 계속 연결 중
 
-목표
-
-- 채팅방 진입 시 DB 조회 감소
-- 최근 메시지 빠른 조회
-
-전략
-
-- 최근 N개의 메시지를 Redis List로 유지하고 LTRIM을 사용하여 캐시 크기를 제한한다.
-- 메시지 저장 시 Redis cache 갱신
-- 채팅방 진입 시 Redis cache 조회
-- 캐시에 없는 메시지는 DB에서 조회
-
-구조
-
-```
-Redis List
-
-key : party:{partyId}:recent
-```
-
-처리 흐름
-
-```
-메시지 저장
-   ↓
-Redis Recent Cache push
-   ↓
-최근 N개 유지 (LTRIM)
-
-채팅방 진입
-   ↓
-Redis cache 조회
-   ↓
-부족한 메시지는 DB 조회
-```
-
-Redis 캐시는 채팅방 최초 진입 시 빠른 메시지 조회를 위해 사용된다.
-
-cache miss가 발생할 경우 DB 조회로 처리한다.
+### 읽음 처리
+- Redis read seq 업데이트
+- Dirty Queue 등록
+- Scheduler flush
 
 ---
 
-# 📖 채팅 읽음 처리
+## 📊 unread 계산 구조
 
-읽음 상태는 두 값으로 계산한다.
-
-last_seq
-채팅방 기준 마지막 메시지 seq
-
-last_read_seq
-사용자가 마지막으로 읽은 메시지 seq
-
-안 읽은 메시지 수
-
-```
-unread = last_seq - last_read_seq
-```
+- fresh / stale cache 분리
+- leader lock 기반 중복 계산 방지
+- stale cache를 fallback으로 사용
+- Redis HASH 기반 summary 관리
 
 ---
 
-# 🧰 Redis 데이터 구조
+## 🧰 Redis 사용 구조
 
-### 메시지 sequence 관리
+### STRING
+- seq, lock, token version, refresh token, session
 
-```
-chat:party:last_seq:{partyId}
-```
+### SET
+- 파티 멤버 캐시
+- dirty user party 목록
 
-Party 단위 메시지 seq 관리
+### ZSET
+- read seq (사용자별 마지막 읽음 위치)
+- dirty queue scheduling 및 flush 대상 관리
 
----
+### HASH
+- unread summary
 
-### 사용자 읽음 위치
+### LIST
+- 최근 채팅 캐시
 
-```
-chat:user:read_seq:{userId}
-```
-
-ZSET 구조
-
-score = last_read_seq
-member = partyId
-
-이를 통해 한 사용자 기준 여러 채팅방의 읽음 위치를
-효율적으로 관리할 수 있으며
-
-unread count 계산을
-last_seq - last_read_seq 방식으로 처리할 수 있다.
+### Lua Script
+- read seq max update
+- dirty queue 처리
+- unread swap
+- token rotate
 
 ---
 
-### Dirty Queue
+## 🔐 인증 및 세션 관리
 
-```
-chat:dirty:users
-chat:dirty:processing
-chat:dirty:user:{userId}
-```
+### JWT 인증
+- Access / Refresh Token 구조
 
-역할
+### Refresh Token Rotation
+- 기존 토큰 비교 후 교체
 
-- flush 대상 user 관리
-- user별 dirty party 관리
-- flush retry 관리
+### Token Version
+- 전체 로그아웃 시 무효화
 
-Dirty Queue는 동일 사용자가 여러 번 read ack를 보내더라도
-flush 대상 사용자로 한 번만 등록되도록 관리한다.
-
-이를 통해 동일 사용자에 대한 중복 DB flush 작업을 방지한다.
+### 세션 관리
+- Redis와 DB를 함께 사용한 활성 세션 관리
+- deviceKey / sessionId 기준 세션 추적
 
 ---
 
-# 🔐 보안 설계
+## 🚧 현재 상태
 
-JWT 기반 인증
+### 구현된 주요 구조
+- Redis 기반 읽음 처리 구조
+- Dirty Queue + Scheduler flush
+- 인증 / 세션 관리 구조
 
-Access Token
-API 인증
-
-Refresh Token
-Access Token 재발급
-
-Refresh Token 사용 시 새로운 Refresh Token을 발급하여
-토큰 재사용 공격(Replay Attack)을 방지하였다.
+### 진행 중
+- 채팅 메시지 송신 흐름
+- WebSocket 처리 확장
 
 ---
 
-# 📱 Device 기반 세션 관리
+## 📚 구현하며 집중한 부분
 
-JWT는 Stateless 구조이기 때문에
-토큰 유출 시 만료 전까지 재사용될 수 있다.
-
-이를 보완하기 위해
-디바이스 기반 세션 식별자를 사용하였다.
-
-헤더
-
-```
-X-LA-Device-Id
-```
-
-기능
-
-- 멀티 디바이스 로그인 지원
-- 디바이스 단위 로그아웃
-- Refresh Token 재사용 방지
+- 요청 처리와 DB 반영 시점 분리
+- Redis 자료구조 역할 분리
+- 원자성 및 정합성 유지
+- 인증과 세션 분리 구조
 
 ---
 
-# 🌐 배포 구조
+## 📝 참고
 
-Docker Compose 기반 단일 EC2 배포
-
-구성
-
-- Nginx
-- Spring Boot
-- Redis
-- MySQL
-
----
-
-# 🧪 테스트 전략
-
-- UseCase 단위 테스트
-- 그룹 승인 동시성 테스트
-- Redis INCR 원자성 검증
-- 채팅 읽음 처리 흐름 테스트
-
----
-
-# 📈 개선 가능 사항
-
-- 채팅 메시지 전송 시스템 구현
-- 채팅 서버와 API 서버 분리
-- Cursor 기반 채팅 조회
-- client_message_id 기반 메시지 중복 방지(idempotency) 처리
-- Redis 캐시 정책 최적화
-- 부하 테스트 기반 병목 분석
-
----
-
-# 👨‍💻 개발자
-
-신현기
-Backend Developer
-
----
-
-⭐ 개인 학습 및 포트폴리오 목적으로 개발된 프로젝트입니다.
+- 구조 개선 과정 중심 프로젝트
+- 일부 기능은 지속적으로 보완 중
