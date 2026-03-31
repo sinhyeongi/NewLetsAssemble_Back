@@ -18,6 +18,9 @@
 현재는 읽음 상태를 Redis에 먼저 반영하고,
 Dirty Queue와 Scheduler를 통해 DB에 반영하는 구조로 분리하고 있습니다.
 
+읽음 요청은 빈도가 높고 최종 read seq만 중요하기 때문에,
+요청마다 DB에 즉시 반영하지 않고 Redis를 중간 저장소로 사용했습니다.
+
 이를 통해 요청 처리 흐름과 DB 반영 시점을 분리하는 방향으로 구조를 재구성하고 있습니다.
 
 ---
@@ -44,7 +47,7 @@ NewLetsAssemble은 기존 프론트엔드와 백엔드가 함께 구성된 프�
 - 읽음 요청이 DB write로 직접 연결되는 구조 완화
 - Redis 기반 상태 저장 및 지연 반영 구조 구성
 - 인증과 세션 상태 분리
-- 동시 요청 환경에서 원자적 처리 보장
+- 동시 요청 환경에서 정합성을 유지할 수 있도록 설계
 
 ---
 
@@ -70,7 +73,7 @@ NewLetsAssemble은 기존 프론트엔드와 백엔드가 함께 구성된 프�
 - Docker
 
 > Docker는 현재 개발 환경에서 Redis와 MySQL 실행 용도로 사용하고 있습니다.
-
+> Redis는 읽음 처리, unread 캐시, 세션 관리, 토큰 처리에 역할별로 사용하고 있습니다.
 ---
 
 ## 🏛 프로젝트 구조
@@ -110,8 +113,8 @@ infra         : Redis, JPA, JDBC, WebSocket, Security 구현
 
 - Redis 데이터를 batch로 DB에 반영
 
-> 읽음 상태는 더 큰 seq만 반영하도록 처리하고,
-> flush 과정에는 lock과 retry 흐름을 두고 있습니다.
+- 읽음 상태는 더 큰 seq만 반영하도록 처리
+- flush 과정에는 lock과 retry 흐름을 적용
 
 ---
 
@@ -136,7 +139,7 @@ infra         : Redis, JPA, JDBC, WebSocket, Security 구현
 ## 📊 채팅 처리 흐름
 
 ### 메시지 처리 구조
-- Redis sequence 기반 메시지 순서 관리 구조를 두고 있음
+- Redis sequence 기반 메시지 순서 관리 구조를 적용
 - Redis Pub/Sub 기반 전달 구조를 구성 중
 - 실제 메시지 송신 유스케이스는 계속 연결 중
 
@@ -187,6 +190,7 @@ infra         : Redis, JPA, JDBC, WebSocket, Security 구현
 
 ### JWT 인증
 - Access / Refresh Token 구조
+- 인증과 세션 상태를 분리하기 위해 JWT 기반 인증 구조 적용
 
 ### Refresh Token Rotation
 - 기존 토큰 비교 후 교체
